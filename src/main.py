@@ -61,6 +61,18 @@ def get_args():
 
 
 def main(args, parser):
+    if wandb.run is not None:
+        wandb.finish()  
+
+    if args.wandb:
+        wandb.init(
+            project=args.wandb_project,  
+            name=args.exp_name,  
+            config=args,  
+            reinit=True  
+        )
+
+
     distributed_backend = distributed.make_backend_from_args(args)
     args = distributed_backend.get_adjusted_args_for_process(args)
     args.world_size = distributed_backend.get_world_size()
@@ -662,6 +674,8 @@ def main(args, parser):
     elif distributed_backend.is_master_process():
         exp_dir.mkdir(parents=True, exist_ok=True)
 
+        
+
     stats = train(
         model=model,
         opt=opt,
@@ -777,4 +791,23 @@ def get_exp_name(
 
 if __name__ == "__main__":
     args, parser = get_args()
+    args.exp_name = f"{args.model}_opt{args.opt}_lr{args.lr}_bs{args.batch_size}x{args.acc_steps}_seqlen{args.sequence_length}_seed={args.seed}"
     main(args, parser)
+
+'''if __name__ == "__main__":
+    base_args,parser = get_args()  
+    
+    experiments = [ 
+        {"muon_lr_factor": 4e-3, "lr":4e-3, "opt": "muon", "batch_size": 128, "acc_steps": 4, "iterations": 6250, "eval_interval": 50},
+        {"lr":4e-3 , "opt": "adamw", "batch_size": 128, "acc_steps": 4, "iterations": 6250, "eval_interval": 50},
+        {"muon_lr_factor": 1e-2, "opt": "muon", "batch_size": 128, "acc_steps": 8, "iterations": 3125, "eval_interval": 25},
+        {"muon_lr_factor": 1e-2, "lr":6e-3, "opt": "muon", "batch_size": 128, "acc_steps": 10, "iterations": 2500, "eval_interval": 20}
+    ]
+
+
+    for exp in experiments:
+        args = copy.deepcopy(base_args)
+        for key, value in exp.items():
+            setattr(args, key, value)
+            args.exp_name = f"{args.model}_opt{args.opt}_lr{args.lr}_bs{args.batch_size}x{args.acc_steps}_seqlen{args.sequence_length}_seed={args.seed}"
+        main(args, parser)  '''

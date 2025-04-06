@@ -7,7 +7,7 @@ Source: https://github.com/toothacher17/Megatron-LM/tree/moonshot/distributedmuo
 import math
 import os
 from typing import Dict, Tuple
-
+import numpy as np
 import torch
 import torch.distributed as dist
 
@@ -470,7 +470,7 @@ class Muon(torch.optim.Optimizer):
     def __init__(
         self,
         muon_params,
-        lr=0.02,
+        lr=0.05,
         momentum=0.95,
         nesterov=True,
         ns_steps=6,
@@ -547,7 +547,7 @@ class Muon(torch.optim.Optimizer):
                     if group["nesterov"]:
                         g = g.add(buf, alpha=momentum)
                     g = zeropower_via_newtonschulz5(g, steps=group["ns_steps"])
-                    g *= max(1, g.size(0) / g.size(1)) ** 0.5
+                    g *= 0.2 * max(g.size(1), g.size(0)) ** 0.5
                     updates_flat[curr_idx : curr_idx + p.numel()] = g.flatten()
                 curr_idx += p.numel()
 
@@ -563,6 +563,8 @@ class Muon(torch.optim.Optimizer):
                     .view_as(p.data)
                     .type_as(p.data)
                 )
+                weight_decay = group["adamw_wd"]
+                p.data.mul_(1 - lr * weight_decay)
                 p.data.add_(g, alpha=-lr)
                 curr_idx += p.numel()
 

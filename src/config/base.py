@@ -11,6 +11,11 @@ def parse_args(base_parser, args, namespace):
     parser = base_parser
 
     # General training params
+    parser.add_argument(
+        "--use_dynamic_tanh", 
+        action="store_true",  # Store True if the argument is provided
+        help="If set, use DynamicTanh instead of LayerNorm in the model"
+    )
     parser.add_argument("--run_prefix", default=None, type=str)
     parser.add_argument("--experiment_name", default=None, type=str)
     parser.add_argument("--seed", default=0, type=int)
@@ -26,7 +31,7 @@ def parse_args(base_parser, args, namespace):
         required=False,
         choices=distributed.registered_backends(),
     )
-    parser.add_argument("--log_interval", default=50, type=int)
+    parser.add_argument("--log_interval", default=200, type=int)
 
     # Checkpointing
     parser.add_argument("--results_base_folder", default="./exps", type=str)
@@ -65,8 +70,8 @@ def parse_args(base_parser, args, namespace):
     )  # cosine and linear schedulers
     parser.add_argument("--cos_inf_steps", default=0, type=int)
     # parser.add_argument("--cos-final-lr", default=1e-6, type=float)
-    parser.add_argument("--iterations", default=15000, type=int)
-    parser.add_argument("--warmup_steps", default=3000, type=int)
+    parser.add_argument("--iterations", default=25000, type=int)
+    parser.add_argument("--warmup_steps", default=500, type=int)
     parser.add_argument("--lr", default=1e-3, type=float)
     # wsd
     parser.add_argument("--wsd_final_lr_scale", default=0.0, type=float)
@@ -82,12 +87,12 @@ def parse_args(base_parser, args, namespace):
         default="linear",
         choices=["linear", "cosine", "exp", "miror_cosine", "square", "sqrt"],
     )
-    parser.add_argument("--dd_first_lr_factor", default=1e-2, type=float)
+    parser.add_argument("--dd_first_lr_factor", default=1e-3, type=float)
 
     # Optimization
     parser.add_argument(
         "--opt",
-        default="adamw",
+        default="muon",
         choices=[
             "adamw",
             "sgd",
@@ -120,8 +125,8 @@ def parse_args(base_parser, args, namespace):
             "d-muon",
         ],
     )
-    parser.add_argument("--batch_size", default=50, type=int)
-    parser.add_argument("--acc_steps", default=1, type=int)
+    parser.add_argument("--batch_size", default=64, type=int)
+    parser.add_argument("--acc_steps", default=4, type=int)
     parser.add_argument("--weight_decay", default=1e-1, type=float)
     parser.add_argument("--beta1", default=0.9, type=float)
     parser.add_argument("--beta2", default=0.95, type=float)
@@ -137,9 +142,9 @@ def parse_args(base_parser, args, namespace):
     parser.add_argument("--normalize_grads", default=False, type=bool)
     parser.add_argument("--soap_data_format", default="channels_first", type=str)
     parser.add_argument("--correct_bias", default=True, type=bool)
-    parser.add_argument("--nesterov", default=False, type=bool)
+    parser.add_argument("--nesterov", default=True, type=bool)
     parser.add_argument("--muon_ns_steps", default=5, type=int)
-    parser.add_argument("--muon_lr_factor", default=1.0, type=float)
+    parser.add_argument("--muon_lr_factor", default=4e-3, type=float)
     parser.add_argument("--adema_beta3", default=0.9, type=float)
     parser.add_argument("--adema_alpha", default=2.0, type=float)
     parser.add_argument("--adema_beta3_warmup", default=None, type=int)
@@ -224,7 +229,7 @@ def parse_args(base_parser, args, namespace):
     # Model params
     parser.add_argument(
         "--model",
-        default="llama",
+        default="base",
         choices=[
             "base",
             "llama",
@@ -239,7 +244,7 @@ def parse_args(base_parser, args, namespace):
     parser.add_argument("--init_std", default=0.02, type=float)
     parser.add_argument("--dropout", default=0.0, type=float)
     parser.add_argument("--n_head", default=12, type=int)
-    parser.add_argument("--n_layer", default=24, type=int)  # depths in att + ff blocks
+    parser.add_argument("--n_layer", default=12, type=int)  # depths in att + ff blocks
     parser.add_argument("--sequence_length", default=512, type=int)
     parser.add_argument(
         "--n_embd", default=768, type=int  # embedding size / hidden size ...

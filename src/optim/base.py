@@ -98,23 +98,6 @@ def train(
         ws = distributed_backend.get_world_size()
         tokens = ws * substep * cfg.sequence_length * cfg.batch_size
         epoch = tokens / train_reader.num_tokens
-        if (
-            curr_iter % cfg.eval_interval == 0
-            or curr_iter == cfg.iterations
-            or (curr_iter in cfg.full_eval_at)
-        ):
-            eval_and_log(
-                tokens,
-                curr_iter,
-                epoch,
-                model,
-                val_reader,
-                type_ctx,
-                distributed_backend,
-                cfg,
-                opt,
-                full_eval=(curr_iter in cfg.full_eval_at),
-            )
 
         if curr_iter == cfg.iterations:
             # Save checkpoints and evaluate at final iteration, but no need to train further
@@ -219,8 +202,30 @@ def train(
 
         dt = (time.perf_counter_ns() - t_start) / 1e9
 
+        if (
+            curr_iter % cfg.eval_interval == 0
+            or curr_iter == cfg.iterations
+            or (curr_iter in cfg.full_eval_at)
+        ):
+            eval_and_log(
+                tokens,
+                curr_iter,
+                epoch,
+                model,
+                val_reader,
+                type_ctx,
+                distributed_backend,
+                cfg,
+                opt,
+                loss,
+                full_eval=(curr_iter in cfg.full_eval_at),
+            )
+        
         curr_iter += 1
+        
 
+
+        '''
         if (
             cfg.log_interval
             and curr_iter % cfg.log_interval == 0
@@ -271,6 +276,7 @@ def train(
                 wandb.log(wandb_logs)
 
             grad_norms = []
+            '''
 
     return stats
 
@@ -285,6 +291,7 @@ def eval_and_log(
     distributed_backend,
     cfg,
     opt,
+    loss,
     full_eval=False,
 ):
     if not distributed_backend.is_master_process():
@@ -319,11 +326,16 @@ def eval_and_log(
         f"val_acc={val_acc:3f}"
     )
 
+    current_lrs = [param_group["lr"] for param_group in opt.param_groups]
+    train_loss = loss.detach().cpu().item() * cfg.acc_steps
+
     if cfg.wandb:
         if curr_iter == cfg.iterations or full_eval:
             logs = {
                 "tokens": tokens,
                 "iter": curr_iter,
+                "lr": current_lrs[0],
+                "train/loss": train_loss,
                 "final-val/loss": val_loss,
                 "final-val/perplexity": val_perplexity,
                 "final-val/acc": val_acc,
@@ -332,6 +344,8 @@ def eval_and_log(
             logs = {
                 "tokens": tokens,
                 "iter": curr_iter,
+                "lr": current_lrs[0],
+                "train/loss": train_loss,
                 "val/loss": val_loss,
                 "val/perplexity": val_perplexity,
                 "val/acc": val_acc,

@@ -15,6 +15,34 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 
+class DynamicTanh(nn.Module):
+    def __init__(self, normalized_shape, alpha_init_value=0.5):
+        super().__init__()
+        self.normalized_shape = normalized_shape
+        self.alpha_init_value = alpha_init_value
+        self.alpha = nn.Parameter(torch.ones(1) * alpha_init_value)
+        self.weight = nn.Parameter(torch.ones(normalized_shape))
+        self.bias = nn.Parameter(torch.zeros(normalized_shape))
+
+    def forward(self, x):
+        return self.weight * torch.tanh(self.alpha * x) + self.bias
+    
+    def extra_repr(self):
+        return f"normalized_shape={self.normalized_shape}, alpha_init_value={self.alpha_init_value}"
+
+
+def convert_ln_to_dyt(module):
+    module_output = module
+    if isinstance(module, LayerNorm):  
+        module_output = DynamicTanh(module.weight.shape)
+    else:
+        for name, child in module.named_children():
+            module_output.add_module(name, convert_ln_to_dyt(child))
+    return module_output
+
+
+
+
 class LayerNorm(nn.Module):
     """LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False"""
 
@@ -25,6 +53,8 @@ class LayerNorm(nn.Module):
 
     def forward(self, input):
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
+
+
 
 
 class CausalSelfAttention(nn.Module):
@@ -158,6 +188,9 @@ class GPTBase(nn.Module):
             )
         )
 
+        if self.config.use_dynamic_tanh:
+            self.transformer = convert_ln_to_dyt(self.transformer)
+
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
@@ -271,60 +304,59 @@ class GPTBase(nn.Module):
 
     def get_parameter_group_specs(self):
         """
-        This long function is unfortunately doing something very simple and is being very defensive:
-        We are separating out all parameters of the model into two buckets: those that will experience
-        weight decay for regularization and those that won't (biases, and layernorm/embedding weights).
-        We are then returning the PyTorch optimizer object.
+        This function separates parameters into those that will experience weight decay for regularization
+        and those that won't (e.g., biases, LayerNorm, and DynamicTanh parameters). The returned specs
+        are then used to set up optimizer parameter groups.
         """
 
-        # separate out all parameters to those that will and won't experience regularizing weight decay
+        # Separate parameters for decay/no_decay
         decay = set()
         no_decay = set()
         whitelist_weight_modules = (torch.nn.Linear,)
-        # need to do import here to avoid circular import (since llama imports from base here)
+        
+        # Need to do import here to avoid circular import (since llama imports from base here)
         from .utils import BLACKLIST_WEIGHT_MODULES
 
+        # Iterate over all modules and their parameters
         for mn, m in self.named_modules():
             for pn, p in m.named_parameters():
-                fpn = "%s.%s" % (mn, pn) if mn else pn  # full param name
-                # random note: because named_modules and named_parameters are recursive
-                # we will see the same tensors p many many times. but doing it this way
-                # allows us to know which parent module any tensor p belongs to...
-                if pn.endswith("bias"):
-                    # all biases will not be decayed
-                    no_decay.add(fpn)
-                elif pn.endswith("weight") and isinstance(m, whitelist_weight_modules):
-                    # weights of whitelist modules will be weight decayed
-                    decay.add(fpn)
-                elif pn.endswith("weight") and isinstance(m, BLACKLIST_WEIGHT_MODULES):
-                    # weights of blacklist modules will NOT be weight decayed
+                fpn = "%s.%s" % (mn, pn) if mn else pn  # Full param name
+
+                # Handle DynamicTanh modules: All parameters in DynamicTanh should not have weight decay
+                if isinstance(m, DynamicTanh):
+                    no_decay.add(fpn)  # Add all parameters of DynamicTanh to no_decay
+
+                # Handle LayerNorm modules: Bias and weight of LayerNorm should not have weight decay
+                elif isinstance(m, torch.nn.LayerNorm):
+                    if pn == "weight" or pn == "bias":
+                        no_decay.add(fpn)  # Bias and weight in LayerNorm should not decay
+
+                # Handle biases: All biases should not have weight decay
+                elif pn.endswith("bias"):
                     no_decay.add(fpn)
 
-        # subtle: 'transformer.wte.weight' and 'lm_head.weight' are tied, so they
-        # will appear in the no_decay and decay sets respectively after the above.
-        # In addition, because named_parameters() doesn't return duplicates, it
-        # will only return the first occurence, key'd by 'transformer.wte.weight', below.
-        # so let's manually remove 'lm_head.weight' from decay set. This will include
-        # this tensor into optimization via transformer.wte.weight only, and not decayed.
+                # Handle weights of whitelist modules: These should have weight decay
+                elif pn.endswith("weight") and isinstance(m, whitelist_weight_modules):
+                    decay.add(fpn)
+
+                # Handle weights of blacklist modules: These should not have weight decay
+                elif pn.endswith("weight") and isinstance(m, BLACKLIST_WEIGHT_MODULES):
+                    no_decay.add(fpn)
+
+        # Remove lm_head.weight from decay set as it's tied to transformer.wte.weight
         decay.remove("lm_head.weight")
 
-        # validate that we considered every parameter
+        # Validate that we considered every parameter
         param_dict = {pn: p for pn, p in self.named_parameters()}
         inter_params = decay & no_decay
         union_params = decay | no_decay
-        assert (
-            len(inter_params) == 0
-        ), "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
-        assert (
-            len(param_dict.keys() - union_params) == 0
-        ), "parameters %s were not separated into either decay/no_decay set!" % (
-            str(param_dict.keys() - union_params),
-        )
+        assert len(inter_params) == 0, f"Parameters {str(inter_params)} made it into both decay/no_decay sets!"
+        assert len(param_dict.keys() - union_params) == 0, f"Parameters {str(param_dict.keys() - union_params)} were not separated into either decay/no_decay set!"
 
-        # create the pytorch optimizer object
+        # Return parameter groups for optimizer
         return [
-            {"params": sorted(list(decay))},
-            {"params": sorted(list(no_decay)), "weight_decay": 0.0},
+            {"params": sorted(list(decay))},  # Parameters with weight decay
+            {"params": sorted(list(no_decay)), "weight_decay": 0.0},  # Parameters without weight decay
         ]
 
     @torch.no_grad()
