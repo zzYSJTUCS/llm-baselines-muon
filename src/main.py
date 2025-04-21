@@ -43,7 +43,7 @@ from optim.shampoo import DistributedShampoo
 from optim.sign import Signum
 from optim.soap import SOAP
 from optim.sophia import SophiaG
-
+from optim.Dion import Dion
 
 def get_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -560,6 +560,15 @@ def main(args, parser):
             lr=args.lr,
             momentum=args.momentum,
         )
+    elif args.opt == 'Dion':
+        opt = Dion(
+            group_specs,
+            lr=args.lr,
+            mu=args.dion_mu,
+            rank_factor=args.dion_rank_factor,
+            orthogonalize=args.dion_orthogonalize,
+        )
+
     else:
         if args.cautious:
             opt = CautiousSignum(

@@ -13,6 +13,7 @@ def parse_args(base_parser, args, namespace):
     # General training params
     parser.add_argument(
         "--use_dynamic_tanh", 
+        
         action="store_true",  # Store True if the argument is provided
         help="If set, use DynamicTanh instead of LayerNorm in the model"
     )
@@ -123,10 +124,11 @@ def parse_args(base_parser, args, namespace):
             "scion",
             "scion-light",
             "d-muon",
+            "Dion",
         ],
     )
     parser.add_argument("--batch_size", default=64, type=int)
-    parser.add_argument("--acc_steps", default=4, type=int)
+    parser.add_argument("--acc_steps", default=2, type=int)
     parser.add_argument("--weight_decay", default=1e-1, type=float)
     parser.add_argument("--beta1", default=0.9, type=float)
     parser.add_argument("--beta2", default=0.95, type=float)
@@ -134,6 +136,9 @@ def parse_args(base_parser, args, namespace):
         "--grad_clip", default=1.0, type=float
     )  # default value is 1.0 in NanoGPT
     parser.add_argument("--momentum", default=0.9, type=float)
+    parser.add_argument("--dion_rank_factor", default=0.8, type=float)
+    parser.add_argument("--dion_mu", default = 1, type=float)
+    parser.add_argument("--dion_orthogonalize", default = True, type=bool)
     parser.add_argument("--shampoo_beta", default=-1.0, type=float)
     parser.add_argument("--precondition_frequency", default=10, type=int)
     parser.add_argument("--max_precond_dim", default=10000, type=int)
@@ -144,7 +149,7 @@ def parse_args(base_parser, args, namespace):
     parser.add_argument("--correct_bias", default=True, type=bool)
     parser.add_argument("--nesterov", default=True, type=bool)
     parser.add_argument("--muon_ns_steps", default=5, type=int)
-    parser.add_argument("--muon_lr_factor", default=4e-3, type=float)
+    parser.add_argument("--muon_lr_factor", default= 0.001, type=float)
     parser.add_argument("--adema_beta3", default=0.9, type=float)
     parser.add_argument("--adema_alpha", default=2.0, type=float)
     parser.add_argument("--adema_beta3_warmup", default=None, type=int)
