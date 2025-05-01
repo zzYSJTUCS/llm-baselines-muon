@@ -125,10 +125,12 @@ def parse_args(base_parser, args, namespace):
             "scion-light",
             "d-muon",
             "Dion",
+            "local_nsmuon",
+            "simulocalmuon"
         ],
     )
-    parser.add_argument("--batch_size", default=64, type=int)
-    parser.add_argument("--acc_steps", default=2, type=int)
+    parser.add_argument("--batch_size", default=16, type=int)
+    parser.add_argument("--acc_steps", default=8, type=int)
     parser.add_argument("--weight_decay", default=1e-1, type=float)
     parser.add_argument("--beta1", default=0.9, type=float)
     parser.add_argument("--beta2", default=0.95, type=float)
@@ -137,7 +139,7 @@ def parse_args(base_parser, args, namespace):
     )  # default value is 1.0 in NanoGPT
     parser.add_argument("--momentum", default=0.9, type=float)
     parser.add_argument("--dion_rank_factor", default=0.8, type=float)
-    parser.add_argument("--dion_mu", default = 1, type=float)
+    parser.add_argument("--dion_mu", default = 0.8, type=float)
     parser.add_argument("--dion_orthogonalize", default = True, type=bool)
     parser.add_argument("--shampoo_beta", default=-1.0, type=float)
     parser.add_argument("--precondition_frequency", default=10, type=int)

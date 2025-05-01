@@ -47,8 +47,56 @@ def zeropower_via_newtonschulz5(G, steps):
     return X
 
 
+#  Zeroth–power / orthogonaliser based on the cubic accelerated
+#  Newton–Schulz variant in Chen-&-Chow (2014, Alg. 1, eqs. 3.5-3.6)
+#
+#  X_{k+1} = (3/2 α_k) X_k ( I − (α_k^2/3) X_k X_kᵀ )
+#            − (1/2 α_k^3) X_k (X_kᵀ X_k) ( I − (α_k^2/3) X_k X_kᵀ )
+#
+#  where  α_k = √[ 3 ( 1 + σ_min(X_k) + σ_min(X_k)^2 ) ]            (★)
+#
+#  In practice we approximate σ_min with ‖X_k‖₂⁻¹ · ‖X_k‖_F,
+#  which is extremely cheap and empirically sufficient.
+# ---------------------------------------------------------------
+def zeropower_via_ns3_variant(G: torch.Tensor,
+                              steps: int = 5) -> torch.Tensor:
+    """
+    Orthogonalise a 2-D tensor with the *cubic* Chen-Chow NS variant.
+    Preserves dtype / device; works on row- or col-major matrices.
+
+    Parameters
+    ----------
+    G : torch.Tensor (m × n)
+        Gradient / momentum matrix to be orthogonalised.
+    steps : int
+        Number of Newton–Schulz iterations (default = 5).
+    """
+
+    # Always iterate on 'skinny' form  (rows ≤ cols)
+    X = G.T if G.size(0) > G.size(1) else G
+    m, n = X.shape
+
+    # Step-0 : scale spectral radius ≤ 1
+    X = X / (X.norm() + 1e-7)
+    #x_0 = 1e-5
+    for _ in range(steps):
+        # -------- very cheap surrogate of σ_min(X) ----------------
+        # σ_min ≥ ‖X‖_F  / (√r · ‖X‖₂)   (r = rank ≤ m)
+        # we just use RHS as an inexpensive lower bound
+        #sigma_min_hat = X.norm(p='fro') / (torch.sqrt(torch.tensor(float(m)).to(X)) * X.norm())
+        # ----------------------------------------------------------
+        #alpha = math.sqrt(3.0 / (1.0 + x_0 + x_0**2))  # eq. (★)
+
+        X  = 1.5 * X - 0.5 * X @ (X.T @ X)
+        #x_0 = 1.5 *alpha * x_0 - 0.5 * alpha**3 * x_0**3
+
+    # restore original orientation
+    return X.T if G.size(0) > G.size(1) else X
+
+
 # @torch.compile
 # def zeropower_via_newtonschulz5(G, steps=10, eps=1e-7):
+
 #     """
 #     Newton-Schulz iteration to compute the zeroth power / orthogonalization of G. We opt to use a
 #     quintic iteration whose coefficients are selected to maximize the slope at zero. For the purpose
@@ -546,7 +594,7 @@ class Muon(torch.optim.Optimizer):
                     buf.mul_(momentum).add_(g)
                     if group["nesterov"]:
                         g = g.add(buf, alpha=momentum)
-                    g = zeropower_via_newtonschulz5(g, steps=group["ns_steps"])
+                    g = zeropower_via_ns3_variant(g, steps=group["ns_steps"])
                     g *= 0.2 * max(g.size(1), g.size(0)) ** 0.5
                     updates_flat[curr_idx : curr_idx + p.numel()] = g.flatten()
                 curr_idx += p.numel()

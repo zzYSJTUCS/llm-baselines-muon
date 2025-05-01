@@ -44,7 +44,8 @@ from optim.sign import Signum
 from optim.soap import SOAP
 from optim.sophia import SophiaG
 from optim.Dion import Dion
-
+from optim.local_nsmuon import local_nsmuon
+from optim.simulocalmuon import simulocalmuon
 def get_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument(
@@ -568,6 +569,12 @@ def main(args, parser):
             rank_factor=args.dion_rank_factor,
             orthogonalize=args.dion_orthogonalize,
         )
+
+    elif args.opt == 'local_nsmuon':
+        opt = local_nsmuon(params=group_specs)
+
+    elif args.opt == 'simulocalmuon':
+        opt = simulocalmuon(params=group_specs)
 
     else:
         if args.cautious:

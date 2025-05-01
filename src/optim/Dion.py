@@ -1,5 +1,6 @@
 import torch
 from torch.optim.optimizer import Optimizer
+import torch.distributed as dist
 
 
 class Dion(Optimizer):
@@ -16,8 +17,8 @@ class Dion(Optimizer):
       1. Compute gradient G for X
       2. B = M + G
       3. (P, R) = power_iteration(B, Q)
-      4. Update momentum: M = B - (1 - mu) * P @ R.T
-      5. Normalize columns of R -> Q
+      4. Error feedback: M = B - (1 - mu) * P @ R.T
+      5. ColumNormalize columns of R -> Q
       6. Update parameter: X -= lr * P @ Q.T
     """
 
@@ -36,7 +37,7 @@ class Dion(Optimizer):
         Args:
             params: iterable of parameters to optimize or dicts defining parameter groups
             lr: learning rate (eta)
-            mu: momentum decay coefficient
+            mu: Error feedbcak decay coefficient
             rank: target rank for low-rank approximation
             orthogonalize: whether to orthogonalize P via QR decomposition
         """
@@ -117,10 +118,12 @@ class Dion(Optimizer):
             eps = group['eps']
             beta1 = group['adam_beta1']
             beta2 = group['adam_beta2']
-
             for p in group['params']:
                 if p.grad is None:
                     continue
+                if dist.is_initialized():
+                    p.grad.div(dist.get_world_size())
+                state = self.state[p]
                 if p.ndim == 1:
                     # Use Adam for 1D params
                     if 'exp_avg' not in state:
@@ -146,7 +149,7 @@ class Dion(Optimizer):
                     G = p.grad
 
                     # Compute B = M + G
-                    B = M.add(G)
+                    B = M + G
 
                     # Low-rank power iteration
                     P, R = self._power_iteration(B, Q, orthogonalize)
@@ -159,7 +162,7 @@ class Dion(Optimizer):
 
                     # Parameter update: X -= lr * P @ Q^T
                     update = P.matmul(Q.T).mul(lr)
-                    p.mul(1 - lr * 0.1)
+                    p.mul(1 - lr * 0.1) #wright decay
                     p.add_(-update)
 
         return loss
